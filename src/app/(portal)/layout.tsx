@@ -5,16 +5,35 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
+// Session guard + brand rail for every portal page. No session → login;
+// signed out mid-session (revoked/expired token) also lands on login, which
+// is where a 403-on-revoke error should send the tenant.
 const NAV = [
     { href: "/overview", label: "Overview" },
+    { href: "/usage", label: "Usage & billing" },
     { href: "/keys", label: "API keys" },
-    { href: "/settings", label: "Settings" },
     { href: "/catalog", label: "Catalog" },
+    { href: "/quickstart", label: "API quickstart" },
+    { href: "/settings", label: "Settings" },
 ];
 
-/** Session guard + nav shell for every portal page. No session → login.
- *  Signed out mid-session (revoked/expired) → also back to login: the
- *  403-on-revoke path lands here through portalFetch errors. */
+function Brand({ compact = false }: { compact?: boolean }) {
+    return (
+        <div className="flex items-center gap-2.5">
+            <span
+                aria-hidden
+                className="grid h-8 w-8 place-items-center rounded-lg bg-gold text-sm font-semibold text-bg"
+            >
+                CS
+            </span>
+            <span className="leading-tight">
+                <span className={`display block ${compact ? "text-lg" : "text-xl"}`}>Cloth Savvy</span>
+                <span className="eyebrow block text-[10px]">Brand portal</span>
+            </span>
+        </div>
+    );
+}
+
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
@@ -41,42 +60,70 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
     if (!ready) {
         return (
-            <main className="flex min-h-screen items-center justify-center text-sm text-slate-400">
-                loading…
+            <main className="grid min-h-screen place-items-center text-sm text-muted">
+                checking session…
             </main>
         );
     }
 
+    const nav = (className: string) =>
+        NAV.map((item) => {
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+                <Link
+                    key={item.href}
+                    href={item.href}
+                    className={
+                        active
+                            ? `${className} border-gold text-gold`
+                            : `${className} border-transparent text-muted hover:text-ink`
+                    }
+                >
+                    {item.label}
+                </Link>
+            );
+        });
+
     return (
-        <div className="min-h-screen bg-slate-50">
-            <header className="border-b border-slate-200 bg-white">
-                <div className="mx-auto flex max-w-5xl items-center gap-6 px-4 py-3">
-                    <span className="font-semibold">Brand portal</span>
-                    <nav className="flex flex-1 gap-4">
-                        {NAV.map((item) => (
-                            <Link
-                                key={item.href}
-                                href={item.href}
-                                className={`text-sm ${
-                                    pathname.startsWith(item.href)
-                                        ? "font-medium text-slate-900 underline underline-offset-4"
-                                        : "text-slate-500 hover:text-slate-900"
-                                }`}
-                            >
-                                {item.label}
-                            </Link>
-                        ))}
-                    </nav>
-                    {email && <span className="hidden text-xs text-slate-400 sm:block">{email}</span>}
-                    <button
-                        onClick={signOut}
-                        className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                    >
+        <div className="min-h-screen lg:pl-60">
+            {/* desktop rail */}
+            <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col border-r border-line bg-sunken lg:flex">
+                <div className="border-b border-line px-5 py-5">
+                    <Link href="/overview">
+                        <Brand />
+                    </Link>
+                </div>
+                <nav className="flex flex-1 flex-col gap-1 p-3">
+                    {nav("rounded-lg border-l-2 px-3 py-2 text-sm transition-colors").map((link, i) => (
+                        <div key={i}>{link}</div>
+                    ))}
+                </nav>
+                <div className="border-t border-line p-4">
+                    <p className="mb-3 truncate text-[11px] text-muted" title={email ?? ""}>
+                        {email}
+                    </p>
+                    <button onClick={signOut} className="btn btn-ghost w-full text-sm">
                         Sign out
                     </button>
                 </div>
+            </aside>
+
+            {/* mobile bar */}
+            <header className="sticky top-0 z-20 border-b border-line bg-sunken/95 backdrop-blur lg:hidden">
+                <div className="flex items-center justify-between gap-4 px-4 py-3">
+                    <Link href="/overview">
+                        <Brand compact />
+                    </Link>
+                    <button onClick={signOut} className="btn btn-ghost btn-sm">
+                        Sign out
+                    </button>
+                </div>
+                <nav className="flex gap-1 overflow-x-auto px-3 pb-2">
+                    {nav("rounded-full border px-3 py-1.5 text-sm whitespace-nowrap")}
+                </nav>
             </header>
-            <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+
+            <main className="mx-auto max-w-6xl px-4 py-7 sm:px-6 lg:px-8 lg:py-10">{children}</main>
         </div>
     );
 }

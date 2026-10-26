@@ -1,26 +1,56 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError, portalFetch } from "@/lib/api";
-import type { PortalProducts, PortalRun, PortalRuns } from "@/lib/types";
+import type { PortalProduct, PortalProducts, PortalRun, PortalRuns } from "@/lib/types";
+import { Badge, Button, Empty, Notice, PageTitle, TableWrap } from "@/components/ui";
+import UploadWizard from "./upload-wizard";
+import StagingQueue from "./staging-queue";
+import CatalogForm, { toFormValues } from "./catalog-form";
+import Modal from "@/components/modal";
 
 const SECTIONS = [
     "", "top", "bottom", "dress", "saree", "blouse", "dupatta", "outerwear",
     "footwear", "bag", "jewellery", "accessory",
 ];
 
+type Tab = "products" | "queue" | "upload" | "history";
+const TABS: Array<{ id: Tab; label: string }> = [
+    { id: "products", label: "Products" },
+    { id: "queue", label: "Import queue" },
+    { id: "upload", label: "Upload CSV" },
+    { id: "history", label: "Upload history" },
+];
+
+/**
+ * The tenant's whole catalogue surface. This is the ONLY place products are
+ * created, changed or deleted — the admin console reads this data and can
+ * re-key it, but it never hand-edits a tenant's rows.
+ */
 export default function CatalogPage() {
+    const [tab, setTab] = useState<Tab>("products");
+
     const [products, setProducts] = useState<PortalProducts | null>(null);
     const [runs, setRuns] = useState<PortalRun[]>([]);
+    const [queueToken, setQueueToken] = useState(0);
     const [error, setError] = useState<string | null>(null);
+
     const [page, setPage] = useState(0);
     const [section, setSection] = useState("");
+    const [status, setStatus] = useState("");
     const [q, setQ] = useState("");
     const [submittedQ, setSubmittedQ] = useState("");
 
-    useEffect(() => {
+    const [editing, setEditing] = useState<PortalProduct | null>(null);
+    const [removing, setRemoving] = useState<PortalProduct | null>(null);
+    const [flash, setFlash] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+
+    const load = useCallback(() => {
         const params = new URLSearchParams({ page: String(page), page_size: "25" });
         if (section) params.set("section", section);
+        if (status) params.set("status", status);
         if (submittedQ) params.set("q", submittedQ);
         portalFetch<PortalProducts>(`/tenant_catalog?${params}`)
             .then((d) => {
@@ -28,154 +58,349 @@ export default function CatalogPage() {
                 setError(null);
             })
             .catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
-    }, [page, section, submittedQ]);
+    }, [page, section, status, submittedQ]);
+
+    useEffect(() => {
+        load();
+    }, [load]);
 
     useEffect(() => {
         portalFetch<PortalRuns>("/tenant_catalog?op=runs")
             .then((d) => setRuns(d.runs))
-            .catch(() => setRuns([])); // runs are supplementary; never block the browse view
+            .catch(() => setRuns([])); // history is supplementary — never block the browse view
     }, []);
 
     const pageSize = products?.page_size ?? 25;
     const totalPages = products ? Math.max(1, Math.ceil(products.total / pageSize)) : 1;
 
-    return (
-        <div className="grid gap-5">
-            <h1 className="text-xl font-semibold">Catalog</h1>
+    function afterMutation(message: string) {
+        setFlash(message);
+        setActionError(null);
+        window.setTimeout(() => setFlash(null), 5000);
+        load();
+        setRuns((r) => r); // runs only change on upload
+        setQueueToken((t) => t + 1);
+    }
 
-            {error && (
-                <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+    async function saveProduct(payload: Record<string, unknown>) {
+        if (!editing) return;
+        const d = await portalFetch<{ reembedded: boolean }>("/tenant_catalog", {
+            method: "POST",
+            body: { op: "product_update", product_id: editing.id, ...payload },
+        });
+        setEditing(null);
+        afterMutation(
+            d.reembedded
+                ? `${editing.external_id} updated — the new text was embedded, search sees it now.`
+                : `${editing.external_id} updated.`,
+        );
+    }
+
+    async function archive(p: PortalProduct) {
+        try {
+            const next = p.status === "active" ? "archived" : "active";
+            await portalFetch("/tenant_catalog", {
+                method: "POST",
+                body: { op: "product_update", product_id: p.id, status: next },
+            });
+            afterMutation(`${p.external_id} is now ${next}.`);
+        } catch (e) {
+            setActionError(e instanceof ApiError ? e.message : String(e));
+        }
+    }
+
+    async function confirmRemove() {
+        if (!removing) return;
+        setBusy(true);
+        try {
+            await portalFetch("/tenant_catalog", {
+                method: "POST",
+                body: { op: "product_delete", product_id: removing.id },
+            });
+            const label = removing.external_id;
+            setRemoving(null);
+            afterMutation(`${label} deleted — it is gone from search immediately.`);
+        } catch (e) {
+            setActionError(e instanceof ApiError ? e.message : String(e));
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <div className="grid gap-6">
+            <PageTitle
+                eyebrow="catalog"
+                title="Products & imports"
+                actions={
+                    <span className="text-sm text-muted">
+                        {products ? `${products.total} product${products.total === 1 ? "" : "s"}` : ""}
+                    </span>
+                }
+            />
+
+            {error && <Notice tone="error">{error}</Notice>}
+            {actionError && <Notice tone="error">{actionError}</Notice>}
+            {flash && <Notice tone="ok">{flash}</Notice>}
+
+            {/* tabs */}
+            <nav className="flex flex-wrap gap-2 border-b border-line pb-3">
+                {TABS.map((t) => (
+                    <button
+                        key={t.id}
+                        onClick={() => setTab(t.id)}
+                        className={`btn btn-sm ${tab === t.id ? "btn-primary" : "btn-ghost"}`}
+                    >
+                        {t.label}
+                    </button>
+                ))}
+            </nav>
+
+            {tab === "queue" && (
+                <StagingQueue
+                    refreshToken={queueToken}
+                    onChanged={() => setQueueToken((t) => t + 1)}
+                />
             )}
 
-            <form
-                onSubmit={(e) => {
-                    e.preventDefault();
-                    setPage(0);
-                    setSubmittedQ(q.trim());
-                }}
-                className="flex flex-wrap items-center gap-3"
-            >
-                <input
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="search titles…"
-                    className="rounded border border-slate-300 px-3 py-1.5 text-sm"
-                />
-                <select
-                    value={section}
-                    onChange={(e) => {
-                        setPage(0);
-                        setSection(e.target.value);
-                    }}
-                    className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                >
-                    {SECTIONS.map((s) => (
-                        <option key={s} value={s}>
-                            {s === "" ? "all sections" : s}
-                        </option>
-                    ))}
-                </select>
-                <button
-                    type="submit"
-                    className="rounded bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
-                >
-                    Search
-                </button>
-                {products && (
-                    <span className="text-xs text-slate-500">{products.total} products</span>
-                )}
-            </form>
+            {tab === "upload" && (
+                <div className="card card-pad">
+                    <UploadWizard
+                        onUploaded={() => {
+                            setQueueToken((t) => t + 1);
+                            portalFetch<PortalRuns>("/tenant_catalog?op=runs")
+                                .then((d) => setRuns(d.runs))
+                                .catch(() => undefined);
+                        }}
+                    />
+                </div>
+            )}
 
-            <section className="rounded border border-slate-200 bg-white">
-                <table className="w-full text-sm">
+            {tab === "history" && (
+                <TableWrap>
                     <thead>
-                        <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                            <th className="px-4 py-2">External ID</th>
-                            <th className="px-4 py-2">Title</th>
-                            <th className="px-4 py-2">Section</th>
-                            <th className="px-4 py-2">Price</th>
-                            <th className="px-4 py-2">Stock</th>
-                            <th className="px-4 py-2">Status</th>
+                        <tr>
+                            <th>Started</th>
+                            <th>Status</th>
+                            <th>Rows</th>
+                            <th>File / notes</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {!products && !error && (
+                        {runs.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="px-4 py-4 text-slate-400">
-                                    loading…
+                                <td colSpan={4} className="text-muted">
+                                    no uploads yet
                                 </td>
                             </tr>
                         )}
-                        {products?.products.length === 0 && (
-                            <tr>
-                                <td colSpan={6} className="px-4 py-4 text-slate-400">
-                                    no products match
+                        {runs.map((r) => (
+                            <tr key={r.id}>
+                                <td className="text-xs text-muted">
+                                    {new Date(r.started_at).toLocaleString()}
                                 </td>
-                            </tr>
-                        )}
-                        {products?.products.map((p) => (
-                            <tr key={p.id} className="border-t border-slate-100">
-                                <td className="px-4 py-2 font-mono text-xs">{p.external_id}</td>
-                                <td className="px-4 py-2">{p.title}</td>
-                                <td className="px-4 py-2">{p.section}</td>
-                                <td className="px-4 py-2">{p.price ?? "—"}</td>
-                                <td className="px-4 py-2">{p.in_stock ? "in stock" : "out"}</td>
-                                <td className="px-4 py-2 text-slate-500">{p.status}</td>
+                                <td>
+                                    <Badge tone={r.status === "failed" ? "danger" : r.status === "done" ? "ok" : "warn"}>
+                                        {r.status}
+                                    </Badge>
+                                </td>
+                                <td>
+                                    {r.rows_ok} queued / {r.rows_failed} failed / {r.rows_total} total
+                                </td>
+                                <td className="max-w-64 truncate text-xs text-muted">{r.notes ?? "—"}</td>
                             </tr>
                         ))}
                     </tbody>
-                </table>
-                {products && products.total > pageSize && (
-                    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-2 text-sm">
-                        <button
-                            disabled={page === 0}
-                            onClick={() => setPage(page - 1)}
-                            className="rounded border border-slate-300 px-3 py-1 text-xs disabled:opacity-40"
-                        >
-                            ← Previous
-                        </button>
-                        <span className="text-xs text-slate-500">
-                            page {page + 1} of {totalPages}
-                        </span>
-                        <button
-                            disabled={page + 1 >= totalPages}
-                            onClick={() => setPage(page + 1)}
-                            className="rounded border border-slate-300 px-3 py-1 text-xs disabled:opacity-40"
-                        >
-                            Next →
-                        </button>
-                    </div>
-                )}
-            </section>
+                </TableWrap>
+            )}
 
-            {runs.length > 0 && (
-                <section className="rounded border border-slate-200 bg-white">
-                    <h2 className="border-b border-slate-200 px-4 py-3 font-medium">Import history</h2>
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="text-left text-xs uppercase text-slate-500">
-                                <th className="px-4 py-2">Started</th>
-                                <th className="px-4 py-2">Status</th>
-                                <th className="px-4 py-2">Rows</th>
-                                <th className="px-4 py-2">Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {runs.map((r) => (
-                                <tr key={r.id} className="border-t border-slate-100">
-                                    <td className="px-4 py-2 text-slate-500">
-                                        {new Date(r.started_at).toLocaleString()}
-                                    </td>
-                                    <td className="px-4 py-2">{r.status}</td>
-                                    <td className="px-4 py-2">
-                                        {r.rows_ok} ok / {r.rows_failed} failed / {r.rows_total} total
-                                    </td>
-                                    <td className="px-4 py-2 text-xs text-slate-500">{r.notes ?? "—"}</td>
-                                </tr>
+            {tab === "products" && (
+                <div className="grid gap-4">
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            setPage(0);
+                            setSubmittedQ(q.trim());
+                        }}
+                        className="flex flex-wrap items-center gap-3"
+                    >
+                        <input
+                            value={q}
+                            onChange={(e) => setQ(e.target.value)}
+                            placeholder="search titles…"
+                            className="input w-56"
+                        />
+                        <select
+                            value={section}
+                            onChange={(e) => {
+                                setPage(0);
+                                setSection(e.target.value);
+                            }}
+                            className="input w-auto"
+                        >
+                            {SECTIONS.map((s) => (
+                                <option key={s} value={s}>
+                                    {s === "" ? "all sections" : s}
+                                </option>
                             ))}
-                        </tbody>
-                    </table>
-                </section>
+                        </select>
+                        <select
+                            value={status}
+                            onChange={(e) => {
+                                setPage(0);
+                                setStatus(e.target.value);
+                            }}
+                            className="input w-auto"
+                        >
+                            <option value="">all statuses</option>
+                            <option value="active">active</option>
+                            <option value="archived">archived</option>
+                        </select>
+                        <Button type="submit" variant="primary" size="sm">
+                            Search
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                                setQ("");
+                                setSubmittedQ("");
+                                setSection("");
+                                setStatus("");
+                                setPage(0);
+                            }}
+                        >
+                            Reset
+                        </Button>
+                    </form>
+
+                    {products === null ? (
+                        <p className="py-6 text-sm text-muted">loading…</p>
+                    ) : products.products.length === 0 ? (
+                        <Empty
+                            title="No products match"
+                            hint="Clear the filters, or upload a CSV to fill your catalogue."
+                            action={
+                                <Button variant="primary" onClick={() => setTab("upload")}>
+                                    Upload a CSV
+                                </Button>
+                            }
+                        />
+                    ) : (
+                        <>
+                            <TableWrap>
+                                <thead>
+                                    <tr>
+                                        <th>SKU</th>
+                                        <th>Title</th>
+                                        <th>Section</th>
+                                        <th>Price</th>
+                                        <th>Stock</th>
+                                        <th>Status</th>
+                                        <th />
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {products.products.map((p) => (
+                                        <tr key={p.id}>
+                                            <td className="mono">{p.external_id}</td>
+                                            <td>
+                                                {p.title}
+                                                {p.colors && p.colors.length > 0 && (
+                                                    <span className="ml-2 text-xs text-muted">
+                                                        {p.colors.join(", ")}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td>{p.section}</td>
+                                            <td>{p.price === null ? "—" : Number(p.price)}</td>
+                                            <td>{p.in_stock ? "in stock" : "out"}</td>
+                                            <td>
+                                                <Badge tone={p.status === "active" ? "ok" : "plain"}>
+                                                    {p.status}
+                                                </Badge>
+                                            </td>
+                                            <td className="whitespace-nowrap text-right">
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        setActionError(null);
+                                                        setEditing(p);
+                                                    }}
+                                                >
+                                                    Edit
+                                                </Button>{" "}
+                                                <Button size="sm" onClick={() => archive(p)}>
+                                                    {p.status === "active" ? "Archive" : "Restore"}
+                                                </Button>{" "}
+                                                <Button
+                                                    size="sm"
+                                                    variant="danger"
+                                                    onClick={() => {
+                                                        setActionError(null);
+                                                        setRemoving(p);
+                                                    }}
+                                                >
+                                                    Delete
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </TableWrap>
+
+                            {products.total > pageSize && (
+                                <div className="flex items-center justify-between text-sm">
+                                    <Button size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                                        ← Previous
+                                    </Button>
+                                    <span className="text-xs text-muted">
+                                        page {page + 1} of {totalPages}
+                                    </span>
+                                    <Button
+                                        size="sm"
+                                        disabled={page + 1 >= totalPages}
+                                        onClick={() => setPage(page + 1)}
+                                    >
+                                        Next →
+                                    </Button>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
+
+            {editing && (
+                <Modal title={`Edit ${editing.external_id}`} onClose={() => setEditing(null)} wide>
+                    <CatalogForm
+                        initial={toFormValues(editing)}
+                        submitLabel="Save changes"
+                        onSubmit={saveProduct}
+                        onCancel={() => setEditing(null)}
+                        extraNote="Changing the title, category or colours re-embeds this product immediately — search updates on the spot."
+                    />
+                </Modal>
+            )}
+
+            {removing && (
+                <Modal title="Delete this product?" onClose={() => setRemoving(null)}>
+                    <div className="grid gap-4">
+                        <p className="text-sm text-muted">
+                            <span className="mono">{removing.external_id}</span> — {removing.title} will be
+                            deleted permanently: it disappears from search results straight away and
+                            the usage history already recorded against it stays. This cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <Button variant="danger" busy={busy} onClick={confirmRemove}>
+                                Delete permanently
+                            </Button>
+                            <Button onClick={() => setRemoving(null)} disabled={busy}>
+                                Cancel
+                            </Button>
+                        </div>
+                    </div>
+                </Modal>
             )}
         </div>
     );

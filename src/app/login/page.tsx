@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { Notice } from "@/components/ui";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -36,43 +37,65 @@ export default function LoginPage() {
     }
 
     return (
-        <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center p-6">
-            <h1 className="mb-1 text-2xl font-semibold">Brand portal</h1>
-            <p className="mb-6 text-sm text-slate-500">
-                Cloth Savvy API — sign in with the login your account manager created for you.
-                No account? Contact your Cloth Savvy representative.
-            </p>
-            <form onSubmit={submit} className="flex flex-col gap-3">
-                <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@brand.com"
-                    autoFocus
-                    autoComplete="email"
-                    className="rounded border border-slate-300 px-3 py-2 text-sm"
-                />
-                <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Password"
-                    autoComplete="current-password"
-                    className="rounded border border-slate-300 px-3 py-2 text-sm"
-                />
-                <button
-                    type="submit"
-                    disabled={busy}
-                    className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-                >
-                    {busy ? "Signing in…" : "Sign in"}
-                </button>
-                {error && (
-                    <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                        {error}
+        <main className="grid min-h-screen place-items-center px-4 py-10">
+            <div className="w-full max-w-md">
+                <div className="mb-7 flex flex-col items-center gap-3 text-center">
+                    <span
+                        aria-hidden
+                        className="grid h-12 w-12 place-items-center rounded-xl bg-gold text-lg font-semibold text-bg"
+                    >
+                        CS
+                    </span>
+                    <div>
+                        <p className="eyebrow mb-1">Tenant portal</p>
+                        <h1 className="display text-3xl">Cloth Savvy</h1>
+                    </div>
+                </div>
+
+                <form onSubmit={submit} className="card card-pad grid gap-4">
+                    <p className="text-sm text-muted">
+                        Sign in with the portal login your account manager created for you. No
+                        account yet? Contact your Cloth Savvy representative — logins are issued
+                        by the admin, never self-registered.
                     </p>
-                )}
-            </form>
+
+                    <label className="block">
+                        <span className="label">Email</span>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="you@brand.com"
+                            autoFocus
+                            autoComplete="email"
+                            className="input"
+                        />
+                    </label>
+
+                    <label className="block">
+                        <span className="label">Password</span>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="••••••••"
+                            autoComplete="current-password"
+                            className="input"
+                        />
+                    </label>
+
+                    {error && <Notice tone="error">{error}</Notice>}
+
+                    <button type="submit" disabled={busy} className="btn btn-primary w-full">
+                        {busy ? "Signing in…" : "Sign in"}
+                    </button>
+                </form>
+
+                <p className="mt-5 text-center text-xs text-muted">
+                    This portal can only reach tenant endpoints — admin functions live on a
+                    different origin and reject these credentials.
+                </p>
+            </div>
         </main>
     );
 }

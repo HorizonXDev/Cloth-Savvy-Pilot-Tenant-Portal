@@ -99,3 +99,36 @@ export interface PortalRuns {
     request_id: string;
     runs: PortalRun[];
 }
+
+/** One row of the import queue (catalog_staging): a CSV row the tenant
+ *  uploaded, waiting for the owner's embedding pipeline. */
+export interface PortalStagingRow {
+    id: string;
+    external_id: string;
+    payload: {
+        title?: string;
+        section?: string;
+        category?: string | null;
+        gender?: string | null;
+        colors?: string[];
+        price?: number | null;
+        in_stock?: boolean;
+        product_url?: string | null;
+        image_url?: string | null;
+        status?: string;
+    } | null;
+    status: "pending" | "merged" | "failed";
+    error: string | null;
+    source_file: string | null;
+    run_id: string | null;
+    product_id: string | null;
+    created_at: string;
+    updated_at: string;
+    merged_at: string | null;
+}
+
+export interface PortalStaging {
+    request_id: string;
+    rows: PortalStagingRow[];
+    total: number;
+}
