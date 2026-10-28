@@ -84,15 +84,18 @@ export default function CatalogPage() {
 
     async function saveProduct(payload: Record<string, unknown>) {
         if (!editing) return;
-        const d = await portalFetch<{ reembedded: boolean }>("/tenant_catalog", {
-            method: "POST",
-            body: { op: "product_update", product_id: editing.id, ...payload },
-        });
+        const d = await portalFetch<{ image_changed: boolean; needs_reembed: boolean }>(
+            "/tenant_catalog",
+            {
+                method: "POST",
+                body: { op: "product_update", product_id: editing.id, ...payload },
+            },
+        );
         setEditing(null);
         afterMutation(
-            d.reembedded
-                ? `${editing.external_id} updated — the new text was embedded, search sees it now.`
-                : `${editing.external_id} updated.`,
+            d.image_changed
+                ? `${editing.external_id} saved — a new picture needs its own vector, so it is flagged for re-embedding and appears in the owner's next export.`
+                : `${editing.external_id} saved — text and price act as filters; the image vector is untouched.`,
         );
     }
 
@@ -319,6 +322,11 @@ export default function CatalogPage() {
                                                 <Badge tone={p.status === "active" ? "ok" : "plain"}>
                                                     {p.status}
                                                 </Badge>
+                                                {p.needs_reembed && (
+                                                    <span className="ml-2 rounded-full bg-warn/15 px-2 py-0.5 text-xs text-warn">
+                                                        image changed
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="whitespace-nowrap text-right">
                                                 <Button
@@ -378,7 +386,7 @@ export default function CatalogPage() {
                         submitLabel="Save changes"
                         onSubmit={saveProduct}
                         onCancel={() => setEditing(null)}
-                        extraNote="Changing the title, category or colours re-embeds this product immediately — search updates on the spot."
+                        extraNote="Text, price and status changes apply to filters as soon as you save. Changing the image flags the product for re-embedding — the owner's pipeline replaces its vector on the next run."
                     />
                 </Modal>
             )}

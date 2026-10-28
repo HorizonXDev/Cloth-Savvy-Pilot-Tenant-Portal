@@ -72,6 +72,7 @@ export interface PortalProduct {
     image_url: string | null;
     status: string;
     source: string;
+    needs_reembed: boolean;
     created_at: string;
     updated_at: string;
 }

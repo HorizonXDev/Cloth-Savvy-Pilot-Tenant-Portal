@@ -144,6 +144,11 @@ export default function StagingQueue({
                                         >
                                             {r.status}
                                         </Badge>
+                                        {r.status !== "merged" && !r.payload?.image_url && (
+                                            <span className="ml-2 rounded-full bg-warn/15 px-2 py-0.5 text-xs text-warn">
+                                                no image
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="text-xs text-muted">
                                         {new Date(r.created_at).toLocaleString()}
@@ -192,7 +197,7 @@ export default function StagingQueue({
                         submitLabel="Save & re-queue"
                         onSubmit={saveStage}
                         onCancel={() => setEditing(null)}
-                        extraNote="Saving puts this row back into the pending queue — the pipeline will embed the new text when it runs."
+                        extraNote="Saving puts this row back into the pending queue — it is embedded from its image URL when the owner's pipeline runs."
                     />
                 </Modal>
             )}

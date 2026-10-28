@@ -202,8 +202,9 @@ console.log(data.items);`,
             </Card>
 
             <Notice>
-                Catalog changes you make in this portal reach search as soon as they are merged by
-                the embedding pipeline — single-product text edits re-embed immediately.
+                Catalog changes reach search in two steps: text, price and status edits apply to
+                filters the moment you save them, while a new image waits for the owner&apos;s
+                embedding pipeline — vectors are built from product images, never from text.
             </Notice>
         </div>
     );

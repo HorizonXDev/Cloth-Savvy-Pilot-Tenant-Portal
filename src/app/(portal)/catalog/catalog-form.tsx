@@ -119,7 +119,7 @@ export default function CatalogForm({
             {extraNote && <Notice>{extraNote}</Notice>}
 
             <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Title" hint="embedded for search — the words a shopper would type">
+                <Field label="Title" hint="shown in results and matched by text search — vectors come from the image">
                     <input
                         className="input"
                         value={value.title}

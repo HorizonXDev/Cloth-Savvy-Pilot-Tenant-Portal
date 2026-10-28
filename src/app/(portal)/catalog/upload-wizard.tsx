@@ -186,6 +186,16 @@ export default function UploadWizard({ onUploaded }: { onUploaded: () => void })
                         </div>
                     )}
 
+                    {blocked.length === 0 && report.noImageUrl.length > 0 && (
+                        <div className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm text-warn">
+                            {report.noImageUrl.length} row(s) have no <code className="mono">image_url</code> —
+                            they will queue, but no vector can be built without a picture: <span className="mono">{
+                                report.noImageUrl.slice(0, 12).join(", ")
+                            }</span>
+                            {report.noImageUrl.length > 12 && "…"}
+                        </div>
+                    )}
+
                     {phase === "ready" && (
                         <div className="flex flex-wrap items-center gap-3">
                             <Button

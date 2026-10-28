@@ -101,6 +101,9 @@ export interface CsvReport {
      *  can say "9 rows use 'layer' — not a valid section") */
     badSections: Record<string, number>;
     blankRows: number;
+    /** rows that are valid but carry no image_url — they queue fine, yet the
+     *  owner's pipeline cannot build a vector for them without a picture. */
+    noImageUrl: string[];
 }
 
 const cell = (headers: string[], cells: string[], logical: string): string => {
@@ -150,6 +153,7 @@ export function validateCsv(headers: string[], rows: string[][]): CsvReport {
         issues: [],
         badSections: {},
         blankRows: 0,
+        noImageUrl: [],
     };
     if (missingColumns.length > 0) return report;
 
@@ -174,7 +178,7 @@ export function validateCsv(headers: string[], rows: string[][]): CsvReport {
 
         const title = cell(headers, cells, "title");
         if (!title) {
-            fail("title", "", "empty — this is the text that gets embedded for search");
+            fail("title", "", "empty — the title is required (it is shown in results and matched by text search)");
         } else if (title.length > 300) {
             fail("title", title.slice(0, 40), "longer than 300 characters");
         }
@@ -230,6 +234,7 @@ export function validateCsv(headers: string[], rows: string[][]): CsvReport {
         const image_url = cell(headers, cells, "image_url");
         if (image_url) data.image_url = image_url;
 
+        if (!data.image_url) report.noImageUrl.push(external_id);
         report.good.push({ row: rowNo, data });
     });
 
