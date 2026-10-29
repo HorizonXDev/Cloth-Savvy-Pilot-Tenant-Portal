@@ -13,6 +13,8 @@ export interface PortalSettings {
     min_similarity: number;
     default_limit: number;
     rate_limit_per_min: number;
+    vton_rate_limit_per_min: number;
+    vton_monthly_cap: number; // 0 = no monthly cap
     combos: Record<string, string[]>;
 }
 
@@ -47,6 +49,12 @@ export interface PortalUsage {
     month_to_date: { calls: number; units: number };
     currency: string | null;
     rate_limit_per_min: number;
+    /** P0-3 quota mirror — the same numbers /v1/vton enforces. */
+    vton: {
+        rate_limit_per_min: number;
+        monthly_cap: number; // 0 = no cap
+        calls_this_month: number;
+    };
     by_endpoint: Array<{
         endpoint: string;
         calls: number;

@@ -102,7 +102,36 @@ export default function UsagePage() {
                             value={`${usage.rate_limit_per_min}/min`}
                             hint="per key"
                         />
+                        <Stat
+                            label="Try-on this month"
+                            value={
+                                usage.vton.monthly_cap > 0
+                                    ? `${usage.vton.calls_this_month.toLocaleString()} / ${usage.vton.monthly_cap.toLocaleString()}`
+                                    : `${usage.vton.calls_this_month.toLocaleString()} · no cap`
+                            }
+                            hint={`${usage.vton.rate_limit_per_min}/min per key · UTC month · /v1/vton`}
+                        />
                     </div>
+
+                    {/* P0-3 quota: the same numbers the API enforces, shown here so a
+                        tenant never discovers the cap through a 402 in production. */}
+                    {usage.vton.monthly_cap > 0 &&
+                        usage.vton.calls_this_month >= usage.vton.monthly_cap && (
+                            <Notice tone="error">
+                                Monthly try-on cap reached — <span className="mono">/v1/vton</span> answers{" "}
+                                <span className="mono">402 quota_exceeded</span> until the 1st of next month (UTC).
+                                Search, combos and the rest of the API are unaffected.
+                            </Notice>
+                        )}
+                    {usage.vton.monthly_cap > 0 &&
+                        usage.vton.calls_this_month < usage.vton.monthly_cap &&
+                        usage.vton.calls_this_month >= Math.ceil(usage.vton.monthly_cap * 0.8) && (
+                            <Notice tone="plain">
+                                {(usage.vton.monthly_cap - usage.vton.calls_this_month).toLocaleString()} try-on{" "}
+                                {usage.vton.monthly_cap - usage.vton.calls_this_month === 1 ? "call" : "calls"} left
+                                this UTC month before <span className="mono">402 quota_exceeded</span> starts.
+                            </Notice>
+                        )}
 
                     <Card
                         title="Calls per day"
